@@ -126,8 +126,21 @@ main {
 }
 
 .collections-container {
+    width: 100%;
+}
+
+/* Collections grid - initial 3-column view */
+.collections-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+/* For expanded view, 3 columns but with more rows */
+.collections-grid.expanded {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(5, auto);
     gap: 15px;
 }
 
@@ -159,6 +172,83 @@ main {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* See More button */
+.see-more-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 15px;
+}
+
+.see-more-btn {
+    background-color: #7d4cdb;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 15px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.see-more-btn:hover {
+    background-color: #6136c9;
+}
+
+/* Expanded view container */
+.expanded-collections-view {
+    width: 100%;
+}
+
+/* Pagination controls */
+.pagination-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+    gap: 5px;
+}
+
+.pagination-btn, .pagination-nav-btn {
+    background-color: #444;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 5px 10px;
+    min-width: 32px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.pagination-btn:hover, .pagination-nav-btn:hover {
+    background-color: #555;
+}
+
+.pagination-btn.active {
+    background-color: #7d4cdb;
+}
+
+/* Back button */
+.back-btn-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.back-btn {
+    background-color: #555;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 15px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.back-btn:hover {
+    background-color: #666;
 }
 
 /* Input section styles */
@@ -523,6 +613,14 @@ footer {
         grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     }
     
+    .collections-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .collections-grid.expanded {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
     .overlay-items {
         grid-template-columns: repeat(3, 1fr);
     }
@@ -530,6 +628,13 @@ footer {
     .tabs {
         flex-direction: column;
         align-items: center;
+    }
+    
+    /* Limit pagination buttons on small screens */
+    .pagination-container {
+        max-width: 100%;
+        overflow-x: auto;
+        padding-bottom: 10px;
     }
 }
 
@@ -561,11 +666,25 @@ footer {
         gap: 10px;
     }
     
+    .collections-grid, .collections-grid.expanded {
+        grid-template-columns: repeat(1, 1fr);
+    }
+    
     .overlay-items {
         grid-template-columns: repeat(2, 1fr);
     }
     
     .nft-preview {
         height: 300px;
+    }
+    
+    .pagination-btn {
+        min-width: 28px;
+        padding: 4px 8px;
+        font-size: 0.8rem;
+    }
+    
+    .see-more-btn, .back-btn {
+        width: 100%;
     }
 }

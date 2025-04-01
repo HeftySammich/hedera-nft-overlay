@@ -113,6 +113,14 @@ function setupEventListeners() {
                 content.style.display = 'none';
             });
             document.getElementById(`${tabId}-tab`).style.display = 'block';
+            
+            // Special handling for "my-nfts" tab when connected
+            if (tabId === 'my-nfts' && state.connectedAccount) {
+                // Refresh collections if needed
+                if (state.nftCollections.length === 0) {
+                    loadUserCollections(state.connectedAccount);
+                }
+            }
         });
     });
     
@@ -126,6 +134,20 @@ function setupEventListeners() {
     scaleSlider.addEventListener('input', updateSelectedOverlayPosition);
     xPositionSlider.addEventListener('input', updateSelectedOverlayPosition);
     yPositionSlider.addEventListener('input', updateSelectedOverlayPosition);
+    
+    // Initialize tabs
+    const activateInitialTab = () => {
+        // Default to my-nfts tab, but switch to token-search if not connected
+        if (!state.connectedAccount) {
+            const tokenSearchTab = document.querySelector('.tab-btn[data-tab="token-search"]');
+            if (tokenSearchTab) {
+                tokenSearchTab.click();
+            }
+        }
+    };
+    
+    // Activate initial tab after short delay to ensure DOM is ready
+    setTimeout(activateInitialTab, 100);
 }
 
 /**
@@ -313,23 +335,186 @@ function displayCollections(collections) {
         return;
     }
     
+    // Sort collections by most recent first (we'll use the ID as a proxy for recency)
+    const sortedCollections = [...collections].sort((a, b) => {
+        // Extract the serial number from the tokenId (assuming 0.0.XXXXX format)
+        const aSerial = parseInt(a.id.split('.').pop());
+        const bSerial = parseInt(b.id.split('.').pop());
+        return bSerial - aSerial;  // Newest first
+    });
+    
     collectionsListElement.innerHTML = '';
     
-    collections.forEach(collection => {
-        const collectionElement = document.createElement('div');
-        collectionElement.className = 'collection-item';
+    // Create container for collections with initially 3 items
+    const collectionGrid = document.createElement('div');
+    collectionGrid.className = 'collections-grid';
+    collectionsListElement.appendChild(collectionGrid);
+    
+    // Initially show only the first 3 collections
+    const initialCount = Math.min(3, sortedCollections.length);
+    
+    for (let i = 0; i < initialCount; i++) {
+        const collection = sortedCollections[i];
+        addCollectionItem(collection, collectionGrid);
+    }
+    
+    // Only add "See More" button if we have more than 3 collections
+    if (sortedCollections.length > 3) {
+        const seeMoreContainer = document.createElement('div');
+        seeMoreContainer.className = 'see-more-container';
         
-        collectionElement.innerHTML = `
-            <img src="${collection.imageUrl}" alt="${collection.name || collection.id}">
-            <p>${collection.name || `Collection #${collection.id}`}</p>
-        `;
-        
-        collectionElement.addEventListener('click', () => {
-            loadCollectionNFTs(collection.id);
+        const seeMoreBtn = document.createElement('button');
+        seeMoreBtn.className = 'see-more-btn';
+        seeMoreBtn.textContent = 'See More';
+        seeMoreBtn.addEventListener('click', () => {
+            expandCollectionsView(sortedCollections);
+            seeMoreContainer.style.display = 'none';
         });
         
-        collectionsListElement.appendChild(collectionElement);
+        seeMoreContainer.appendChild(seeMoreBtn);
+        collectionsListElement.appendChild(seeMoreContainer);
+    }
+}
+
+/**
+ * Add a collection item to the grid
+ * @param {Object} collection - Collection object
+ * @param {HTMLElement} container - Container element
+ */
+function addCollectionItem(collection, container) {
+    const collectionElement = document.createElement('div');
+    collectionElement.className = 'collection-item';
+    
+    collectionElement.innerHTML = `
+        <img src="${collection.imageUrl}" alt="${collection.name || collection.id}">
+        <p>${collection.name || `Collection #${collection.id}`}</p>
+    `;
+    
+    collectionElement.addEventListener('click', () => {
+        loadCollectionNFTs(collection.id);
     });
+    
+    container.appendChild(collectionElement);
+}
+
+/**
+ * Expand collections view to show all collections with pagination
+ * @param {Array} collections - Array of collection objects
+ */
+function expandCollectionsView(collections) {
+    // Clear existing content
+    collectionsListElement.innerHTML = '';
+    
+    // Create container for expanded view
+    const expandedView = document.createElement('div');
+    expandedView.className = 'expanded-collections-view';
+    
+    // Create grid for collections
+    const collectionGrid = document.createElement('div');
+    collectionGrid.className = 'collections-grid expanded';
+    expandedView.appendChild(collectionGrid);
+    
+    // Calculate total pages (15 items per page)
+    const itemsPerPage = 15;
+    const totalPages = Math.ceil(collections.length / itemsPerPage);
+    
+    // State for current page
+    let currentPage = 1;
+    
+    // Function to render a specific page
+    function renderPage(page) {
+        // Clear the grid
+        collectionGrid.innerHTML = '';
+        
+        // Calculate start and end indices
+        const startIndex = (page - 1) * itemsPerPage;
+        const endIndex = Math.min(startIndex + itemsPerPage, collections.length);
+        
+        // Add collections for this page
+        for (let i = startIndex; i < endIndex; i++) {
+            addCollectionItem(collections[i], collectionGrid);
+        }
+        
+        // Update active page in pagination
+        document.querySelectorAll('.pagination-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (parseInt(btn.dataset.page) === page) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // Update current page state
+        currentPage = page;
+    }
+    
+    // Add pagination controls if we have more than one page
+    if (totalPages > 1) {
+        const paginationContainer = document.createElement('div');
+        paginationContainer.className = 'pagination-container';
+        
+        // Add previous button
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'pagination-nav-btn';
+        prevBtn.innerHTML = '&laquo;';
+        prevBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                renderPage(currentPage - 1);
+            }
+        });
+        paginationContainer.appendChild(prevBtn);
+        
+        // Add page buttons
+        for (let i = 1; i <= totalPages; i++) {
+            const pageBtn = document.createElement('button');
+            pageBtn.className = 'pagination-btn';
+            pageBtn.textContent = i;
+            pageBtn.dataset.page = i;
+            
+            if (i === 1) {
+                pageBtn.classList.add('active');
+            }
+            
+            pageBtn.addEventListener('click', () => {
+                renderPage(i);
+            });
+            
+            paginationContainer.appendChild(pageBtn);
+        }
+        
+        // Add next button
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'pagination-nav-btn';
+        nextBtn.innerHTML = '&raquo;';
+        nextBtn.addEventListener('click', () => {
+            if (currentPage < totalPages) {
+                renderPage(currentPage + 1);
+            }
+        });
+        paginationContainer.appendChild(nextBtn);
+        
+        expandedView.appendChild(paginationContainer);
+    }
+    
+    // Add back button
+    const backBtnContainer = document.createElement('div');
+    backBtnContainer.className = 'back-btn-container';
+    
+    const backBtn = document.createElement('button');
+    backBtn.className = 'back-btn';
+    backBtn.textContent = 'Back to Compact View';
+    backBtn.addEventListener('click', () => {
+        // Go back to compact view
+        displayCollections(collections);
+    });
+    
+    backBtnContainer.appendChild(backBtn);
+    expandedView.appendChild(backBtnContainer);
+    
+    // Add the expanded view to the container
+    collectionsListElement.appendChild(expandedView);
+    
+    // Render the first page
+    renderPage(1);
 }
 
 /**
