@@ -58,6 +58,11 @@ const yPositionSlider = document.getElementById('y-position');
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', initApp);
 
+// Export utility functions to window for other modules to use
+window.showLoading = showLoading;
+window.hideLoading = hideLoading;
+window.showNotification = showNotification;
+
 /**
  * Initialize the application
  */
@@ -148,7 +153,36 @@ function handleWalletConnect() {
     if (window.hashpackWallet.isConnected()) {
         window.hashpackWallet.disconnect();
     } else {
-        window.hashpackWallet.connect();
+        try {
+            window.hashpackWallet.connect();
+            
+            // Set a timeout to show an error message if connection takes too long
+            setTimeout(() => {
+                if (!window.hashpackWallet.isConnected()) {
+                    const notification = document.createElement('div');
+                    notification.className = 'notification error';
+                    notification.innerHTML = `<strong>Connection Issue</strong><br>Please check if HashPack wallet is installed and unlocked.`;
+                    document.body.appendChild(notification);
+                    
+                    setTimeout(() => {
+                        notification.classList.add('fade-out');
+                        setTimeout(() => notification.remove(), 500);
+                    }, 5000);
+                }
+            }, 10000);
+        } catch (error) {
+            console.error('Error connecting to wallet:', error);
+            
+            const notification = document.createElement('div');
+            notification.className = 'notification error';
+            notification.innerHTML = `<strong>Error connecting to wallet</strong><br>${error.message || 'Unknown error'}`;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.add('fade-out');
+                setTimeout(() => notification.remove(), 500);
+            }, 5000);
+        }
     }
 }
 
@@ -158,6 +192,18 @@ function handleWalletConnect() {
  */
 function handleWalletConnected(accountId) {
     console.log('Wallet connected:', accountId);
+    
+    // Show connection notification
+    const notification = document.createElement('div');
+    notification.className = 'notification success';
+    notification.textContent = `Successfully connected to account: ${accountId}`;
+    document.body.appendChild(notification);
+    
+    // Remove notification after 5 seconds
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => notification.remove(), 500);
+    }, 5000);
     
     // Update state
     state.connectedAccount = accountId;
@@ -204,7 +250,10 @@ function handleWalletDisconnected() {
  */
 async function loadUserCollections(accountId) {
     try {
-        // Show loading message
+        // Show loading overlay
+        showLoading('Fetching your NFT collections...');
+        
+        // Show loading message in collections list
         collectionsListElement.innerHTML = `<p class="connect-prompt">Loading your NFT collections...</p>`;
         
         // Get collections from API
@@ -213,13 +262,42 @@ async function loadUserCollections(accountId) {
         // Update state
         state.nftCollections = collections;
         
+        // Hide loading
+        hideLoading();
+        
         // Display collections
         displayCollections(collections);
+        
+        // Show success message if collections were found
+        if (collections && collections.length > 0) {
+            const notification = document.createElement('div');
+            notification.className = 'notification success';
+            notification.textContent = `Found ${collections.length} NFT collection${collections.length > 1 ? 's' : ''}`;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.add('fade-out');
+                setTimeout(() => notification.remove(), 500);
+            }, 3000);
+        }
     } catch (error) {
         console.error('Error loading collections:', error);
+        hideLoading();
+        
         collectionsListElement.innerHTML = `
             <p class="connect-prompt">Error loading NFT collections. Please try again.</p>
         `;
+        
+        // Show error notification
+        const notification = document.createElement('div');
+        notification.className = 'notification error';
+        notification.innerHTML = `<strong>Error loading collections</strong><br>${error.message || 'Unknown error'}`;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.classList.add('fade-out');
+            setTimeout(() => notification.remove(), 500);
+        }, 5000);
     }
 }
 
@@ -260,7 +338,10 @@ function displayCollections(collections) {
  */
 async function loadCollectionNFTs(tokenId) {
     try {
-        // Clear gallery
+        // Show loading overlay
+        showLoading(`Loading NFTs for token ${tokenId}...`);
+        
+        // Clear gallery and show loading message
         nftGallery.innerHTML = `<p class="gallery-placeholder">Loading NFTs...</p>`;
         
         // Get NFTs for the collection
@@ -277,13 +358,53 @@ async function loadCollectionNFTs(tokenId) {
         // Update state
         state.currentNFTs = nfts;
         
+        // Hide loading
+        hideLoading();
+        
         // Display NFTs
         displayNFTGallery(nfts);
+        
+        // Show success message if NFTs were found
+        if (nfts && nfts.length > 0) {
+            const notification = document.createElement('div');
+            notification.className = 'notification success';
+            notification.textContent = `Found ${nfts.length} NFT${nfts.length > 1 ? 's' : ''} for token ${tokenId}`;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.add('fade-out');
+                setTimeout(() => notification.remove(), 500);
+            }, 3000);
+        } else {
+            // Show message if no NFTs were found
+            const notification = document.createElement('div');
+            notification.className = 'notification error';
+            notification.textContent = `No NFTs found for token ${tokenId}`;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.add('fade-out');
+                setTimeout(() => notification.remove(), 500);
+            }, 3000);
+        }
     } catch (error) {
         console.error('Error loading NFTs:', error);
+        hideLoading();
+        
         nftGallery.innerHTML = `
             <p class="gallery-placeholder">Error loading NFTs. Please try again.</p>
         `;
+        
+        // Show error notification
+        const notification = document.createElement('div');
+        notification.className = 'notification error';
+        notification.innerHTML = `<strong>Error loading NFTs</strong><br>${error.message || 'Unknown error'}`;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.classList.add('fade-out');
+            setTimeout(() => notification.remove(), 500);
+        }, 5000);
     }
 }
 
@@ -294,7 +415,31 @@ function handleSearch() {
     const tokenId = tokenIdInput.value.trim();
     
     if (!tokenId) {
-        alert('Please enter a valid Hedera Token ID');
+        // Show error notification instead of alert
+        const notification = document.createElement('div');
+        notification.className = 'notification error';
+        notification.textContent = 'Please enter a valid Hedera Token ID';
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.classList.add('fade-out');
+            setTimeout(() => notification.remove(), 500);
+        }, 3000);
+        return;
+    }
+    
+    // Validate token ID format
+    const tokenIdPattern = /^\d+\.\d+\.\d+$/;
+    if (!tokenIdPattern.test(tokenId)) {
+        const notification = document.createElement('div');
+        notification.className = 'notification error';
+        notification.innerHTML = `<strong>Invalid Token ID format</strong><br>Expected format: 0.0.12345`;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.classList.add('fade-out');
+            setTimeout(() => notification.remove(), 500);
+        }, 3000);
         return;
     }
     
@@ -445,6 +590,60 @@ function deselectOverlay() {
     
     // Clear selected overlay
     state.selectedOverlay = null;
+}
+
+/**
+ * Show loading overlay with custom message
+ * @param {string} message - Message to display
+ */
+function showLoading(message = 'Loading...') {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingMessage = document.getElementById('loading-message');
+    
+    if (loadingMessage) {
+        loadingMessage.textContent = message;
+    }
+    
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'flex';
+    }
+}
+
+/**
+ * Hide loading overlay
+ */
+function hideLoading() {
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+    }
+}
+
+/**
+ * Show a notification
+ * @param {string} message - Notification message
+ * @param {string} type - Notification type ('success' or 'error')
+ * @param {number} duration - Duration in milliseconds before auto-hiding
+ * @param {boolean} isHtml - Whether the message contains HTML
+ */
+function showNotification(message, type = 'success', duration = 5000, isHtml = false) {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    
+    if (isHtml) {
+        notification.innerHTML = message;
+    } else {
+        notification.textContent = message;
+    }
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => notification.remove(), 500);
+    }, duration);
+    
+    return notification;
 }
 
 /**

@@ -326,11 +326,22 @@ async function getOwnedNFTs(accountId, tokenId) {
 
 /**
  * Show loading overlay
+ * @param {string} message - Optional message to display
  */
-function showLoading() {
-    const loadingOverlay = document.getElementById('loading-overlay');
-    if (loadingOverlay) {
-        loadingOverlay.style.display = 'flex';
+function showLoading(message) {
+    if (window.showLoading) {
+        window.showLoading(message);
+    } else {
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingMessage = document.getElementById('loading-message');
+        
+        if (message && loadingMessage) {
+            loadingMessage.textContent = message;
+        }
+        
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'flex';
+        }
     }
 }
 
@@ -338,9 +349,13 @@ function showLoading() {
  * Hide loading overlay
  */
 function hideLoading() {
-    const loadingOverlay = document.getElementById('loading-overlay');
-    if (loadingOverlay) {
-        loadingOverlay.style.display = 'none';
+    if (window.hideLoading) {
+        window.hideLoading();
+    } else {
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'none';
+        }
     }
 }
 
