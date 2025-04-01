@@ -1,0 +1,554 @@
+/**
+ * Overlayz - NFT Overlay Tool for Hedera
+ * Main application logic
+ */
+
+// App state
+const state = {
+    selectedNFT: null,
+    selectedOverlay: null,
+    appliedOverlays: [],
+    connectedAccount: null,
+    nftCollections: [],
+    currentNFTs: [],
+    overlayCategories: {
+        hats: [
+            { id: 'hat1', name: 'Party Hat', imgSrc: 'assets/overlays/hats/party-hat.png' },
+            { id: 'hat2', name: 'Cowboy Hat', imgSrc: 'assets/overlays/hats/cowboy-hat.png' },
+            { id: 'hat3', name: 'Crown', imgSrc: 'assets/overlays/hats/crown.png' },
+            { id: 'hat4', name: 'Beanie', imgSrc: 'assets/overlays/hats/beanie.png' },
+            { id: 'hat5', name: 'Wizard Hat', imgSrc: 'assets/overlays/hats/wizard-hat.png' },
+            { id: 'hat6', name: 'Cap', imgSrc: 'assets/overlays/hats/cap.png' }
+        ],
+        glasses: [
+            { id: 'glass1', name: 'Sunglasses', imgSrc: 'assets/overlays/glasses/sunglasses.png' },
+            { id: 'glass2', name: 'Nerd Glasses', imgSrc: 'assets/overlays/glasses/nerd-glasses.png' },
+            { id: 'glass3', name: 'Cool Shades', imgSrc: 'assets/overlays/glasses/cool-shades.png' },
+            { id: 'glass4', name: 'Heart Glasses', imgSrc: 'assets/overlays/glasses/heart-glasses.png' }
+        ],
+        accessories: [
+            { id: 'acc1', name: 'Coffee Cup', imgSrc: 'assets/overlays/accessories/coffee-cup.png' },
+            { id: 'acc2', name: 'Microphone', imgSrc: 'assets/overlays/accessories/microphone.png' },
+            { id: 'acc3', name: 'Pipe', imgSrc: 'assets/overlays/accessories/pipe.png' },
+            { id: 'acc4', name: 'Bow Tie', imgSrc: 'assets/overlays/accessories/bow-tie.png' },
+            { id: 'acc5', name: 'Mustache', imgSrc: 'assets/overlays/accessories/mustache.png' }
+        ]
+    }
+};
+
+// DOM Elements
+const connectWalletBtn = document.getElementById('connect-wallet-btn');
+const accountDisplay = document.getElementById('account-display');
+const tokenIdInput = document.getElementById('token-id');
+const searchBtn = document.getElementById('search-btn');
+const nftGallery = document.getElementById('nft-gallery');
+const nftPreview = document.getElementById('nft-preview');
+const overlayItems = document.getElementById('overlay-items');
+const categoryBtns = document.querySelectorAll('.category-btn');
+const saveBtn = document.getElementById('save-btn');
+const resetBtn = document.getElementById('reset-btn');
+const tabBtns = document.querySelectorAll('.tab-btn');
+const tabContents = document.querySelectorAll('.tab-content');
+const collectionsListElement = document.getElementById('collections-list');
+const positionControls = document.getElementById('position-controls');
+const scaleSlider = document.getElementById('scale-slider');
+const xPositionSlider = document.getElementById('x-position');
+const yPositionSlider = document.getElementById('y-position');
+
+// Initialize app when DOM is loaded
+document.addEventListener('DOMContentLoaded', initApp);
+
+/**
+ * Initialize the application
+ */
+function initApp() {
+    // Set initial overlay category
+    displayOverlayItems('hats');
+    
+    // Initialize HashPack wallet connection
+    initializeWallet();
+    
+    // Initialize the canvas for NFT preview
+    window.canvasUtil.init('nft-preview');
+    
+    // Set up event listeners
+    setupEventListeners();
+}
+
+/**
+ * Set up all event listeners
+ */
+function setupEventListeners() {
+    // Connect wallet button
+    connectWalletBtn.addEventListener('click', handleWalletConnect);
+    
+    // Search button
+    searchBtn.addEventListener('click', handleSearch);
+    
+    // Category buttons
+    categoryBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            categoryBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            displayOverlayItems(btn.dataset.category);
+        });
+    });
+    
+    // Tab buttons
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.dataset.tab;
+            
+            // Update active tab button
+            tabBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            // Show selected tab content
+            tabContents.forEach(content => {
+                content.style.display = 'none';
+            });
+            document.getElementById(`${tabId}-tab`).style.display = 'block';
+        });
+    });
+    
+    // Save button
+    saveBtn.addEventListener('click', saveImage);
+    
+    // Reset button
+    resetBtn.addEventListener('click', resetOverlays);
+    
+    // Position sliders
+    scaleSlider.addEventListener('input', updateSelectedOverlayPosition);
+    xPositionSlider.addEventListener('input', updateSelectedOverlayPosition);
+    yPositionSlider.addEventListener('input', updateSelectedOverlayPosition);
+}
+
+/**
+ * Initialize HashPack wallet connection
+ */
+function initializeWallet() {
+    // Initialize HashConnect
+    window.hashpackWallet.init();
+    
+    // Register event handlers
+    window.hashpackWallet.onEvent('connect', handleWalletConnected);
+    window.hashpackWallet.onEvent('disconnect', handleWalletDisconnected);
+    
+    // Check if already connected
+    if (window.hashpackWallet.isConnected()) {
+        const accountId = window.hashpackWallet.getAccountId();
+        handleWalletConnected(accountId);
+    }
+}
+
+/**
+ * Handle wallet connect button click
+ */
+function handleWalletConnect() {
+    if (window.hashpackWallet.isConnected()) {
+        window.hashpackWallet.disconnect();
+    } else {
+        window.hashpackWallet.connect();
+    }
+}
+
+/**
+ * Handle wallet connected event
+ * @param {string} accountId - Hedera account ID
+ */
+function handleWalletConnected(accountId) {
+    console.log('Wallet connected:', accountId);
+    
+    // Update state
+    state.connectedAccount = accountId;
+    
+    // Update UI
+    connectWalletBtn.textContent = 'Connected';
+    connectWalletBtn.classList.add('connected');
+    accountDisplay.textContent = `Account: ${accountId}`;
+    accountDisplay.style.display = 'block';
+    
+    // Load user's NFT collections
+    loadUserCollections(accountId);
+}
+
+/**
+ * Handle wallet disconnected event
+ */
+function handleWalletDisconnected() {
+    console.log('Wallet disconnected');
+    
+    // Update state
+    state.connectedAccount = null;
+    state.nftCollections = [];
+    
+    // Update UI
+    connectWalletBtn.textContent = 'Connect Wallet';
+    connectWalletBtn.classList.remove('connected');
+    accountDisplay.style.display = 'none';
+    
+    // Clear collections list
+    collectionsListElement.innerHTML = `
+        <p class="connect-prompt">Connect your wallet to see your NFTs</p>
+    `;
+    
+    // Clear gallery
+    nftGallery.innerHTML = `
+        <p class="gallery-placeholder">NFT collection will appear here after connecting wallet or searching</p>
+    `;
+}
+
+/**
+ * Load user's NFT collections
+ * @param {string} accountId - Hedera account ID
+ */
+async function loadUserCollections(accountId) {
+    try {
+        // Show loading message
+        collectionsListElement.innerHTML = `<p class="connect-prompt">Loading your NFT collections...</p>`;
+        
+        // Get collections from API
+        const collections = await window.hederaApi.getNFTCollections(accountId);
+        
+        // Update state
+        state.nftCollections = collections;
+        
+        // Display collections
+        displayCollections(collections);
+    } catch (error) {
+        console.error('Error loading collections:', error);
+        collectionsListElement.innerHTML = `
+            <p class="connect-prompt">Error loading NFT collections. Please try again.</p>
+        `;
+    }
+}
+
+/**
+ * Display NFT collections
+ * @param {Array} collections - Array of collection objects
+ */
+function displayCollections(collections) {
+    if (!collections || collections.length === 0) {
+        collectionsListElement.innerHTML = `
+            <p class="connect-prompt">No NFT collections found for this account</p>
+        `;
+        return;
+    }
+    
+    collectionsListElement.innerHTML = '';
+    
+    collections.forEach(collection => {
+        const collectionElement = document.createElement('div');
+        collectionElement.className = 'collection-item';
+        
+        collectionElement.innerHTML = `
+            <img src="${collection.imageUrl}" alt="${collection.name || collection.id}">
+            <p>${collection.name || `Collection #${collection.id}`}</p>
+        `;
+        
+        collectionElement.addEventListener('click', () => {
+            loadCollectionNFTs(collection.id);
+        });
+        
+        collectionsListElement.appendChild(collectionElement);
+    });
+}
+
+/**
+ * Load NFTs for a specific collection
+ * @param {string} tokenId - Token ID
+ */
+async function loadCollectionNFTs(tokenId) {
+    try {
+        // Clear gallery
+        nftGallery.innerHTML = `<p class="gallery-placeholder">Loading NFTs...</p>`;
+        
+        // Get NFTs for the collection
+        let nfts;
+        
+        if (state.connectedAccount) {
+            // If connected to wallet, get owned NFTs
+            nfts = await window.hederaApi.getOwnedNFTs(state.connectedAccount, tokenId);
+        } else {
+            // Otherwise get all NFTs for token
+            nfts = await window.hederaApi.getNFTsByTokenId(tokenId);
+        }
+        
+        // Update state
+        state.currentNFTs = nfts;
+        
+        // Display NFTs
+        displayNFTGallery(nfts);
+    } catch (error) {
+        console.error('Error loading NFTs:', error);
+        nftGallery.innerHTML = `
+            <p class="gallery-placeholder">Error loading NFTs. Please try again.</p>
+        `;
+    }
+}
+
+/**
+ * Handle search button click
+ */
+function handleSearch() {
+    const tokenId = tokenIdInput.value.trim();
+    
+    if (!tokenId) {
+        alert('Please enter a valid Hedera Token ID');
+        return;
+    }
+    
+    // Load NFTs for the token ID
+    loadCollectionNFTs(tokenId);
+}
+
+/**
+ * Display NFT gallery
+ * @param {Array} nfts - Array of NFT objects
+ */
+function displayNFTGallery(nfts) {
+    nftGallery.innerHTML = '';
+    
+    if (!nfts || nfts.length === 0) {
+        nftGallery.innerHTML = `
+            <p class="gallery-placeholder">No NFTs found for this collection</p>
+        `;
+        return;
+    }
+    
+    nfts.forEach(nft => {
+        const nftElement = document.createElement('div');
+        nftElement.className = 'nft-item';
+        nftElement.dataset.id = nft.id;
+        
+        nftElement.innerHTML = `
+            <img src="${nft.imageUrl}" alt="NFT #${nft.serialNumber}">
+            <div class="nft-info">
+                <p>#${nft.serialNumber}</p>
+            </div>
+        `;
+        
+        nftElement.addEventListener('click', () => selectNFT(nft));
+        
+        nftGallery.appendChild(nftElement);
+    });
+}
+
+/**
+ * Select an NFT for editing
+ * @param {Object} nft - NFT object
+ */
+function selectNFT(nft) {
+    // Update state
+    state.selectedNFT = nft;
+    
+    // Update UI to show selected NFT
+    document.querySelectorAll('.nft-item').forEach(item => {
+        item.classList.remove('selected');
+        if (item.dataset.id === String(nft.id)) {
+            item.classList.add('selected');
+        }
+    });
+    
+    // Reset any applied overlays
+    resetOverlays();
+    
+    // Set NFT image in canvas
+    window.canvasUtil.setNFTImage(nft.imageUrl);
+    
+    // Enable buttons
+    saveBtn.disabled = false;
+    resetBtn.disabled = false;
+}
+
+/**
+ * Display overlay items for a category
+ * @param {string} category - Category name
+ */
+function displayOverlayItems(category) {
+    const items = state.overlayCategories[category] || [];
+    overlayItems.innerHTML = '';
+    
+    items.forEach(item => {
+        const itemElement = document.createElement('div');
+        itemElement.className = 'overlay-item';
+        itemElement.dataset.id = item.id;
+        
+        itemElement.innerHTML = `
+            <img src="${item.imgSrc}" alt="${item.name}">
+            <p>${item.name}</p>
+        `;
+        
+        itemElement.addEventListener('click', () => {
+            selectOverlay(item);
+        });
+        
+        overlayItems.appendChild(itemElement);
+    });
+}
+
+/**
+ * Select an overlay to apply
+ * @param {Object} overlay - Overlay object
+ */
+function selectOverlay(overlay) {
+    if (!state.selectedNFT) {
+        alert('Please select an NFT first');
+        return;
+    }
+    
+    try {
+        // Check if this overlay is already selected
+        if (state.selectedOverlay && state.selectedOverlay.id === overlay.id) {
+            // Deselect it
+            deselectOverlay();
+            return;
+        }
+        
+        // Deselect any previously selected overlay
+        deselectOverlay();
+        
+        // Check if the overlay is already applied
+        const existingIndex = state.appliedOverlays.findIndex(item => item.id === overlay.id);
+        
+        if (existingIndex !== -1) {
+            // If already applied, select it for editing
+            state.selectedOverlay = overlay;
+            
+            // Highlight in the UI
+            document.querySelector(`.overlay-item[data-id="${overlay.id}"]`).classList.add('active');
+            
+            // Show position controls
+            showPositionControls(state.appliedOverlays[existingIndex]);
+        } else {
+            // Add the new overlay
+            applyOverlay(overlay);
+        }
+    } catch (error) {
+        console.error('Error selecting overlay:', error);
+    }
+}
+
+/**
+ * Deselect the current overlay
+ */
+function deselectOverlay() {
+    if (!state.selectedOverlay) return;
+    
+    // Remove highlight from UI
+    document.querySelectorAll('.overlay-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // Hide position controls
+    positionControls.style.display = 'none';
+    
+    // Clear selected overlay
+    state.selectedOverlay = null;
+}
+
+/**
+ * Apply an overlay to the NFT
+ * @param {Object} overlay - Overlay object
+ */
+async function applyOverlay(overlay) {
+    try {
+        // Add overlay to canvas
+        await window.canvasUtil.addOverlay(overlay);
+        
+        // Update state
+        state.appliedOverlays.push(overlay);
+        state.selectedOverlay = overlay;
+        
+        // Update UI
+        document.querySelector(`.overlay-item[data-id="${overlay.id}"]`).classList.add('active');
+        
+        // Show position controls
+        showPositionControls(overlay);
+    } catch (error) {
+        console.error('Error applying overlay:', error);
+    }
+}
+
+/**
+ * Show position controls for an overlay
+ * @param {Object} overlay - Overlay object
+ */
+function showPositionControls(overlay) {
+    // Reset sliders to default
+    scaleSlider.value = 1.0;
+    xPositionSlider.value = 0;
+    yPositionSlider.value = 0;
+    
+    // Show controls
+    positionControls.style.display = 'block';
+}
+
+/**
+ * Update the position of the selected overlay
+ */
+function updateSelectedOverlayPosition() {
+    if (!state.selectedOverlay) return;
+    
+    const scale = parseFloat(scaleSlider.value);
+    const x = parseInt(xPositionSlider.value);
+    const y = parseInt(yPositionSlider.value);
+    
+    // Update overlay position on canvas
+    window.canvasUtil.updateOverlayPosition(state.selectedOverlay.id, { scale, x, y });
+}
+
+/**
+ * Save the modified NFT image
+ */
+function saveImage() {
+    if (!state.selectedNFT) return;
+    
+    try {
+        // Generate filename from NFT info
+        const fileName = `overlayz-${state.selectedNFT.tokenId}-${state.selectedNFT.serialNumber}`;
+        
+        // Export canvas as image
+        window.canvasUtil.exportImage(fileName)
+            .then(() => {
+                console.log('Image saved successfully');
+            })
+            .catch(error => {
+                console.error('Error saving image:', error);
+                alert('Error saving image. Please try again.');
+            });
+    } catch (error) {
+        console.error('Error in saveImage:', error);
+        alert('Error saving image. Please try again.');
+    }
+}
+
+/**
+ * Reset all overlays
+ */
+function resetOverlays() {
+    // Clear applied overlays from state
+    state.appliedOverlays = [];
+    state.selectedOverlay = null;
+    
+    // Reset UI
+    document.querySelectorAll('.overlay-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // Hide position controls
+    positionControls.style.display = 'none';
+    
+    // Clear canvas overlays
+    window.canvasUtil.clearOverlays();
+}
+
+// Mock data for development (Remove in production)
+const mockNFTs = [
+    { id: 1, tokenId: '0.0.1234', serialNumber: '1234', imageUrl: 'https://via.placeholder.com/300' },
+    { id: 2, tokenId: '0.0.1234', serialNumber: '1235', imageUrl: 'https://via.placeholder.com/300' },
+    { id: 3, tokenId: '0.0.1234', serialNumber: '1236', imageUrl: 'https://via.placeholder.com/300' },
+    { id: 4, tokenId: '0.0.1234', serialNumber: '1237', imageUrl: 'https://via.placeholder.com/300' },
+    { id: 5, tokenId: '0.0.1234', serialNumber: '1238', imageUrl: 'https://via.placeholder.com/300' },
+    { id: 6, tokenId: '0.0.1234', serialNumber: '1239', imageUrl: 'https://via.placeholder.com/300' }
+];
