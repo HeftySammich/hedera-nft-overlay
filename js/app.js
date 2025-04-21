@@ -39,16 +39,12 @@ const state = {
 // DOM Elements
 const connectWalletBtn = document.getElementById('connect-wallet-btn');
 const accountDisplay = document.getElementById('account-display');
-const tokenIdInput = document.getElementById('token-id');
-const searchBtn = document.getElementById('search-btn');
 const nftGallery = document.getElementById('nft-gallery');
 const nftPreview = document.getElementById('nft-preview');
 const overlayItems = document.getElementById('overlay-items');
 const categoryBtns = document.querySelectorAll('.category-btn');
 const saveBtn = document.getElementById('save-btn');
 const resetBtn = document.getElementById('reset-btn');
-const tabBtns = document.querySelectorAll('.tab-btn');
-const tabContents = document.querySelectorAll('.tab-content');
 const collectionsListElement = document.getElementById('collections-list');
 const positionControls = document.getElementById('position-controls');
 const scaleSlider = document.getElementById('scale-slider');
@@ -67,17 +63,25 @@ window.showNotification = showNotification;
  * Initialize the application
  */
 function initApp() {
+    console.log("Initializing application...");
+    
     // Set initial overlay category
     displayOverlayItems('hats');
-    
-    // Initialize HashPack wallet connection
-    initializeWallet();
     
     // Initialize the canvas for NFT preview
     window.canvasUtil.init('nft-preview');
     
     // Set up event listeners
     setupEventListeners();
+    
+    // Initialize wallet directly - our presentation mockup is already loaded
+    try {
+        console.log("Initializing wallet connection for presentation...");
+        initializeWallet();
+    } catch (error) {
+        console.error("Error initializing wallet:", error);
+        showNotification("Error initializing wallet connection. Please refresh the page.", "error", 7000, true);
+    }
 }
 
 /**
@@ -87,40 +91,12 @@ function setupEventListeners() {
     // Connect wallet button
     connectWalletBtn.addEventListener('click', handleWalletConnect);
     
-    // Search button
-    searchBtn.addEventListener('click', handleSearch);
-    
     // Category buttons
     categoryBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             categoryBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             displayOverlayItems(btn.dataset.category);
-        });
-    });
-    
-    // Tab buttons
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const tabId = btn.dataset.tab;
-            
-            // Update active tab button
-            tabBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            
-            // Show selected tab content
-            tabContents.forEach(content => {
-                content.style.display = 'none';
-            });
-            document.getElementById(`${tabId}-tab`).style.display = 'block';
-            
-            // Special handling for "my-nfts" tab when connected
-            if (tabId === 'my-nfts' && state.connectedAccount) {
-                // Refresh collections if needed
-                if (state.nftCollections.length === 0) {
-                    loadUserCollections(state.connectedAccount);
-                }
-            }
         });
     });
     
@@ -134,98 +110,161 @@ function setupEventListeners() {
     scaleSlider.addEventListener('input', updateSelectedOverlayPosition);
     xPositionSlider.addEventListener('input', updateSelectedOverlayPosition);
     yPositionSlider.addEventListener('input', updateSelectedOverlayPosition);
-    
-    // Initialize tabs
-    const activateInitialTab = () => {
-        // Default to my-nfts tab, but switch to token-search if not connected
-        if (!state.connectedAccount) {
-            const tokenSearchTab = document.querySelector('.tab-btn[data-tab="token-search"]');
-            if (tokenSearchTab) {
-                tokenSearchTab.click();
-            }
-        }
-    };
-    
-    // Activate initial tab after short delay to ensure DOM is ready
-    setTimeout(activateInitialTab, 100);
 }
 
 /**
- * Initialize HashPack wallet connection
+ * Initialize WalletConnect connection
  */
 function initializeWallet() {
-    // Initialize HashConnect
-    window.hashpackWallet.init();
+    // Initialize WalletConnect
+    window.walletConnector.init();
     
     // Register event handlers
-    window.hashpackWallet.onEvent('connect', handleWalletConnected);
-    window.hashpackWallet.onEvent('disconnect', handleWalletDisconnected);
+    window.walletConnector.onEvent('connect', handleWalletConnected);
+    window.walletConnector.onEvent('disconnect', handleWalletDisconnected);
+    window.walletConnector.onEvent('accountsChanged', handleWalletConnected);
+    window.walletConnector.onEvent('chainChanged', handleChainChanged);
     
     // Check if already connected
-    if (window.hashpackWallet.isConnected()) {
-        const accountId = window.hashpackWallet.getAccountId();
-        handleWalletConnected(accountId);
+    if (window.walletConnector.isConnected()) {
+        const account = window.walletConnector.getAccount();
+        handleWalletConnected(account);
+    }
+}
+
+/**
+ * Handle chain changes
+ * @param {string} chainId - Chain ID
+ */
+function handleChainChanged(chainId) {
+    console.log('Chain changed:', chainId);
+    
+    // Update the API base URL based on the new chain
+    window.hederaApi.setApiBaseFromChainId(chainId);
+    
+    // Determine network name for user feedback
+    let networkName = 'Unknown';
+    if (chainId === '295') {
+        networkName = 'Hedera Mainnet';
+    } else if (chainId === '296') {
+        networkName = 'Hedera Testnet';
+    }
+    
+    // Show notification to user
+    showNotification(`Network changed to ${networkName} (Chain ID: ${chainId})`, "warning", 3000);
+    
+    // Refresh collections if connected
+    if (state.connectedAccount && state.nftCollections.length > 0) {
+        loadUserCollections(state.connectedAccount);
     }
 }
 
 /**
  * Handle wallet connect button click
  */
-function handleWalletConnect() {
-    if (window.hashpackWallet.isConnected()) {
-        window.hashpackWallet.disconnect();
-    } else {
-        try {
-            window.hashpackWallet.connect();
+async function handleWalletConnect() {
+    console.log("Wallet connect button clicked");
+    
+    // Disable button while processing to prevent multiple clicks
+    connectWalletBtn.disabled = true;
+    connectWalletBtn.textContent = 'Processing...';
+    
+    try {
+        if (window.walletConnector.isConnected()) {
+            // If already connected, disconnect wallet
+            console.log("Disconnecting wallet...");
+            await window.walletConnector.disconnect();
+            showNotification("Wallet disconnected", "success", 3000);
+        } else {
+            // If not connected, try to connect wallet
+            console.log("Attempting to connect wallet...");
             
-            // Set a timeout to show an error message if connection takes too long
-            setTimeout(() => {
-                if (!window.hashpackWallet.isConnected()) {
-                    const notification = document.createElement('div');
-                    notification.className = 'notification error';
-                    notification.innerHTML = `<strong>Connection Issue</strong><br>Please check if HashPack wallet is installed and unlocked.`;
-                    document.body.appendChild(notification);
-                    
-                    setTimeout(() => {
-                        notification.classList.add('fade-out');
-                        setTimeout(() => notification.remove(), 500);
-                    }, 5000);
+            // Show connecting message
+            const notification = showNotification(
+                "Opening wallet connection dialog...", 
+                "success", 10000
+            );
+            
+            try {
+                // Connect to wallet - using await to catch errors
+                await window.walletConnector.connect();
+                
+                // Set a timeout to show an error message if connection takes too long
+                setTimeout(() => {
+                    if (!window.walletConnector.isConnected()) {
+                        showNotification(
+                            "Waiting for wallet connection. Please approve the connection request in your wallet.", 
+                            "warning", 7000, true
+                        );
+                    }
+                }, 5000);
+            } catch (error) {
+                console.error('Error connecting to wallet:', error);
+                
+                // Provide appropriate error message
+                let errorMessage = "Failed to connect to wallet";
+                
+                if (error.message?.includes("User rejected")) {
+                    errorMessage = "Connection request was rejected. Please try again and approve the connection in your wallet.";
+                } else if (error.message?.includes("provider not found") || error.message?.includes("not available")) {
+                    errorMessage = "Compatible wallet not detected. Please install a Hedera-compatible wallet like Kabila or HashPack.";
+                } else {
+                    errorMessage = error.message || "Unknown connection error. Please check if your wallet is available.";
                 }
-            }, 10000);
-        } catch (error) {
-            console.error('Error connecting to wallet:', error);
-            
-            const notification = document.createElement('div');
-            notification.className = 'notification error';
-            notification.innerHTML = `<strong>Error connecting to wallet</strong><br>${error.message || 'Unknown error'}`;
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                notification.classList.add('fade-out');
-                setTimeout(() => notification.remove(), 500);
-            }, 5000);
+                
+                showNotification(`<strong>Error connecting to wallet</strong><br>${errorMessage}`, "error", 10000, true);
+                
+                // Remove the connecting notification
+                if (notification) {
+                    notification.remove();
+                }
+            }
         }
+    } catch (error) {
+        console.error('Error in wallet connect/disconnect:', error);
+        showNotification(`<strong>Connection Error</strong><br>${error.message || 'Unknown error'}`, "error", 5000, true);
+    } finally {
+        // Re-enable button and restore text
+        connectWalletBtn.disabled = false;
+        connectWalletBtn.textContent = window.walletConnector.isConnected() ? 'Connected' : 'Connect Wallet';
     }
 }
 
 /**
  * Handle wallet connected event
- * @param {string} accountId - Hedera account ID
+ * @param {string|Array} accountData - Account address or array of addresses
  */
-function handleWalletConnected(accountId) {
+function handleWalletConnected(accountData) {
+    // Determine the account ID from the data (might be an array from WalletConnect)
+    let accountId;
+    
+    if (Array.isArray(accountData)) {
+        // WalletConnect returns an array of accounts
+        accountId = accountData[0];
+    } else {
+        // Direct account ID (string)
+        accountId = accountData;
+    }
+    
     console.log('Wallet connected:', accountId);
     
-    // Show connection notification
-    const notification = document.createElement('div');
-    notification.className = 'notification success';
-    notification.textContent = `Successfully connected to account: ${accountId}`;
-    document.body.appendChild(notification);
+    // Get chain ID from provider and set API base URL
+    if (window.walletConnector && window.hederaApi) {
+        try {
+            const currentChainId = window.walletConnector.getChainId ? 
+                window.walletConnector.getChainId() : 
+                '296'; // Default to testnet if function not available
+                
+            window.hederaApi.setApiBaseFromChainId(currentChainId);
+        } catch (error) {
+            console.error('Error getting chain ID:', error);
+            // Default to testnet
+            window.hederaApi.setApiBaseFromChainId('296');
+        }
+    }
     
-    // Remove notification after 5 seconds
-    setTimeout(() => {
-        notification.classList.add('fade-out');
-        setTimeout(() => notification.remove(), 500);
-    }, 5000);
+    // Show connection notification
+    showNotification(`Successfully connected to account: ${accountId}`, "success", 5000);
     
     // Update state
     state.connectedAccount = accountId;
@@ -242,9 +281,10 @@ function handleWalletConnected(accountId) {
 
 /**
  * Handle wallet disconnected event
+ * @param {Object} error - Optional error object from disconnect event
  */
-function handleWalletDisconnected() {
-    console.log('Wallet disconnected');
+function handleWalletDisconnected(error) {
+    console.log('Wallet disconnected', error ? `with error: ${error.message}` : '');
     
     // Update state
     state.connectedAccount = null;
@@ -262,8 +302,16 @@ function handleWalletDisconnected() {
     
     // Clear gallery
     nftGallery.innerHTML = `
-        <p class="gallery-placeholder">NFT collection will appear here after connecting wallet or searching</p>
+        <p class="gallery-placeholder">Connect your wallet to see your NFTs and apply overlays</p>
     `;
+    
+    // Show disconnection notification if it wasn't initiated by the user (error present)
+    if (error) {
+        showNotification(
+            `Wallet disconnected: ${error.message || 'Connection closed'}`, 
+            "warning", 5000
+        );
+    }
 }
 
 /**
@@ -532,13 +580,8 @@ async function loadCollectionNFTs(tokenId) {
         // Get NFTs for the collection
         let nfts;
         
-        if (state.connectedAccount) {
-            // If connected to wallet, get owned NFTs
-            nfts = await window.hederaApi.getOwnedNFTs(state.connectedAccount, tokenId);
-        } else {
-            // Otherwise get all NFTs for token
-            nfts = await window.hederaApi.getNFTsByTokenId(tokenId);
-        }
+        // Only show NFTs owned by the connected account
+        nfts = await window.hederaApi.getOwnedNFTs(state.connectedAccount, tokenId);
         
         // Update state
         state.currentNFTs = nfts;
@@ -551,26 +594,10 @@ async function loadCollectionNFTs(tokenId) {
         
         // Show success message if NFTs were found
         if (nfts && nfts.length > 0) {
-            const notification = document.createElement('div');
-            notification.className = 'notification success';
-            notification.textContent = `Found ${nfts.length} NFT${nfts.length > 1 ? 's' : ''} for token ${tokenId}`;
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                notification.classList.add('fade-out');
-                setTimeout(() => notification.remove(), 500);
-            }, 3000);
+            showNotification(`Found ${nfts.length} NFT${nfts.length > 1 ? 's' : ''} for collection ${tokenId}`, "success", 3000);
         } else {
             // Show message if no NFTs were found
-            const notification = document.createElement('div');
-            notification.className = 'notification error';
-            notification.textContent = `No NFTs found for token ${tokenId}`;
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                notification.classList.add('fade-out');
-                setTimeout(() => notification.remove(), 500);
-            }, 3000);
+            showNotification(`No NFTs found for collection ${tokenId}`, "error", 3000);
         }
     } catch (error) {
         console.error('Error loading NFTs:', error);
@@ -593,44 +620,7 @@ async function loadCollectionNFTs(tokenId) {
     }
 }
 
-/**
- * Handle search button click
- */
-function handleSearch() {
-    const tokenId = tokenIdInput.value.trim();
-    
-    if (!tokenId) {
-        // Show error notification instead of alert
-        const notification = document.createElement('div');
-        notification.className = 'notification error';
-        notification.textContent = 'Please enter a valid Hedera Token ID';
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-            notification.classList.add('fade-out');
-            setTimeout(() => notification.remove(), 500);
-        }, 3000);
-        return;
-    }
-    
-    // Validate token ID format
-    const tokenIdPattern = /^\d+\.\d+\.\d+$/;
-    if (!tokenIdPattern.test(tokenId)) {
-        const notification = document.createElement('div');
-        notification.className = 'notification error';
-        notification.innerHTML = `<strong>Invalid Token ID format</strong><br>Expected format: 0.0.12345`;
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-            notification.classList.add('fade-out');
-            setTimeout(() => notification.remove(), 500);
-        }, 3000);
-        return;
-    }
-    
-    // Load NFTs for the token ID
-    loadCollectionNFTs(tokenId);
-}
+// Token search feature removed
 
 /**
  * Display NFT gallery

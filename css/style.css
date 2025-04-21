@@ -638,7 +638,7 @@ footer {
     }
 }
 
-/* HashPack App Compatibility */
+/* Mobile App Compatibility */
 @media (max-width: 480px) {
     /* Smaller screens for mobile wallet app viewing */
     .container {
@@ -687,4 +687,75 @@ footer {
     .see-more-btn, .back-btn {
         width: 100%;
     }
+    
+    /* Enhanced mobile wallet connect styling */
+    .connect-btn {
+        width: 100%;
+        padding: 15px;
+        font-size: 1.1rem;
+        margin-bottom: 10px;
+    }
+    
+    .account-info {
+        width: 100%;
+        text-align: center;
+        padding: 12px;
+        word-break: break-all;
+    }
+    
+    /* WalletConnect modal customizations */
+    .walletconnect-modal__base {
+        max-width: 95% !important;
+    }
+    
+    .walletconnect-modal__mobile__toggle {
+        height: auto !important;
+        padding: 10px 5px !important;
+    }
+    
+    .walletconnect-modal__header {
+        padding: 15px !important;
+    }
+    
+    .walletconnect-modal__footer {
+        font-size: 0.8rem !important;
+    }
+    
+    .walletconnect-modal__btn {
+        padding: 8px 15px !important;
+        margin: 5px !important;
+    }
+}
+
+/* WalletConnect Wallet Buttons */
+.wallet-option-btn {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    padding: 12px 15px;
+    margin-bottom: 10px;
+    background-color: #333;
+    border: 1px solid #555;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.wallet-option-btn:hover {
+    background-color: #444;
+    transform: translateY(-2px);
+}
+
+.wallet-option-btn img {
+    width: 24px;
+    height: 24px;
+    margin-right: 12px;
+}
+
+.wallet-options-container {
+    padding: 15px;
+    max-width: 400px;
+    margin: 0 auto;
 }

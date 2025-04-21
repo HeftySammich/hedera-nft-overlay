@@ -35,8 +35,6 @@
         font-style: normal;
       }
     </style>
-    <!-- HashConnect for HashPack Wallet Integration -->
-    <script src="https://cdn.jsdelivr.net/npm/hashconnect@3.0.13/dist/bundle.js"></script>
 </head>
 <body>
     <div class="container">
@@ -54,30 +52,18 @@
             </div>
             
             <div class="input-section">
-                <div class="tabs">
-                    <button class="tab-btn active" data-tab="my-nfts">My NFTs</button>
-                    <button class="tab-btn" data-tab="token-search">Search Token ID</button>
-                </div>
-                
-                <div id="token-search-tab" class="tab-content" style="display: none;">
-                    <h3>Enter Hedera Token ID</h3>
-                    <div class="search-bar">
-                        <input type="text" id="token-id" placeholder="0.0.12345">
-                        <button id="search-btn">Search</button>
-                    </div>
-                </div>
-                
-                <div id="my-nfts-tab" class="tab-content">
+                <div class="nft-section-header">
                     <h3>Your NFT Collections</h3>
-                    <div id="collections-list" class="collections-container">
-                        <!-- Collections will be loaded here -->
-                    </div>
+                </div>
+                
+                <div id="collections-list" class="collections-container">
+                    <!-- Collections will be loaded here -->
                 </div>
             </div>
             
             <div class="nft-gallery" id="nft-gallery">
                 <!-- NFT images will be displayed here -->
-                <p class="gallery-placeholder">Connect your wallet to see your NFTs</p>
+                <p class="gallery-placeholder">Connect your wallet to see your NFTs and apply overlays</p>
             </div>
             
             <div class="editor-container">
@@ -134,11 +120,182 @@
         <div class="spinner"></div>
         <p id="loading-message">Loading...</p>
     </div>
+    
+    <!-- Debug Panel (Toggle with ctrl+D) -->
+    <div id="debug-panel" style="display: none; position: fixed; bottom: 0; right: 0; background: rgba(0,0,0,0.8); color: #fff; padding: 10px; max-width: 400px; max-height: 300px; overflow: auto; z-index: 9999; font-family: monospace; font-size: 12px;">
+        <h4>Debug Console</h4>
+        <div id="debug-content"></div>
+    </div>
+    
+    <script>
+        // Simple debug console for wallet connection
+        (function() {
+            const debugPanel = document.getElementById('debug-panel');
+            const debugContent = document.getElementById('debug-content');
+            
+            // Toggle debug panel with Ctrl+D
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 'd') {
+                    e.preventDefault();
+                    debugPanel.style.display = debugPanel.style.display === 'none' ? 'block' : 'none';
+                }
+            });
+            
+            // Override console.log to also output to debug panel
+            const oldLog = console.log;
+            console.log = function(...args) {
+                oldLog.apply(console, args);
+                
+                const message = args.map(arg => {
+                    if (typeof arg === 'object') {
+                        try {
+                            return JSON.stringify(arg);
+                        } catch (e) {
+                            return String(arg);
+                        }
+                    }
+                    return String(arg);
+                }).join(' ');
+                
+                const logEntry = document.createElement('div');
+                logEntry.textContent = '> ' + message;
+                debugContent.appendChild(logEntry);
+                
+                // Scroll to bottom
+                debugContent.scrollTop = debugContent.scrollHeight;
+            };
+        })();
+    </script>
+
+    <!-- WalletConnect and Hedera Wallet Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.8.0/dist/web3.min.js"></script>
+    <script>
+        // HashPack detection helper - load SDK directly before modal launch
+        window.loadHashPack = async function() {
+            if (window.hashpack) return true;
+            
+            try {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.hashpack.app/hashconnect.min.js';
+                script.async = true;
+                
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+                
+                return typeof window.hashpack !== 'undefined';
+            } catch (err) {
+                console.error("Failed to load HashPack:", err);
+                return false;
+            }
+        };
+        
+        // Check if browser has HashPack extension
+        window.checkForHashPack = function() {
+            return typeof window.hashpack !== 'undefined';
+        };
+        
+        // Try to detect wallet extensions
+        if (window.checkForHashPack()) {
+            console.log("HashPack wallet extension detected!");
+        } else {
+            console.log("No HashPack extension detected, will show wallet options on connect");
+        }
+    </script>
+    <!-- Load our custom wallet modal -->
+    <script src="js/vendor/walletconnect-modal.js"></script>
+    
+    <script>
+        // Simple event emitter for our wallet connector
+        function createEventEmitter() {
+            const listeners = [];
+            return {
+                on: function(callback) {
+                    listeners.push(callback);
+                    return function unsubscribe() {
+                        const index = listeners.indexOf(callback);
+                        if (index !== -1) {
+                            listeners.splice(index, 1);
+                        }
+                    };
+                },
+                emit: function(data) {
+                    listeners.forEach(callback => {
+                        try {
+                            callback(data);
+                        } catch (err) {
+                            console.error("Error in event listener:", err);
+                        }
+                    });
+                }
+            };
+        }
+        
+        console.log("WalletConnect libraries loaded for presentation");
+    </script>
 
     <!-- Scripts -->
-    <script src="js/hashpack.js"></script>
+    <script src="js/wallet.js"></script>
     <script src="js/api.js"></script>
     <script src="js/canvas.js"></script>
     <script src="js/app.js"></script>
+    
+    <script>
+        // Show special presentation mode notification after app loads
+        setTimeout(function() {
+            const notification = document.createElement('div');
+            notification.className = 'notification warning';
+            notification.innerHTML = `
+                <strong>Wallet Connection</strong><br>
+                Connect directly to HashPack or select from multiple wallet options.
+            `;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.classList.add('fade-out');
+                setTimeout(() => notification.remove(), 500);
+            }, 7000);
+            
+            // Add a testing button for development
+            const testButton = document.createElement('button');
+            testButton.className = 'test-mode-btn';
+            testButton.textContent = 'Testing Mode (Use Mock Connection)';
+            testButton.style.position = 'fixed';
+            testButton.style.bottom = '20px';
+            testButton.style.right = '20px';
+            testButton.style.backgroundColor = '#ff9800';
+            testButton.style.color = 'white';
+            testButton.style.border = 'none';
+            testButton.style.borderRadius = '5px';
+            testButton.style.padding = '8px 15px';
+            testButton.style.cursor = 'pointer';
+            testButton.style.zIndex = '9999';
+            
+            testButton.addEventListener('click', function() {
+                if (window.walletConnector) {
+                    // Create a mock connection
+                    window.walletConnector.createMockConnection();
+                    
+                    // Notify the user
+                    const mockNotification = document.createElement('div');
+                    mockNotification.className = 'notification success';
+                    mockNotification.textContent = 'Using mock wallet connection for testing';
+                    document.body.appendChild(mockNotification);
+                    
+                    setTimeout(() => {
+                        mockNotification.classList.add('fade-out');
+                        setTimeout(() => mockNotification.remove(), 500);
+                    }, 3000);
+                    
+                    testButton.style.display = 'none';
+                }
+            });
+            
+            document.body.appendChild(testButton);
+        }, 2000);
+    </script>
 </body>
 </html>

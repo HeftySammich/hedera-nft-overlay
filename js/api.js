@@ -7,8 +7,28 @@
 const MAINNET_API_BASE = 'https://mainnet-public.mirrornode.hedera.com/api/v1';
 const TESTNET_API_BASE = 'https://testnet.mirrornode.hedera.com/api/v1';
 
-// Default to mainnet
-const API_BASE = MAINNET_API_BASE;
+// Default to testnet for development
+let API_BASE = TESTNET_API_BASE;
+
+// Function to set API base URL based on chain ID
+function setApiBaseFromChainId(chainId) {
+    // Convert to string for comparison
+    chainId = String(chainId);
+    
+    if (chainId === '295') {
+        // Hedera Mainnet
+        API_BASE = MAINNET_API_BASE;
+        console.log('API set to Hedera Mainnet');
+    } else if (chainId === '296' || chainId === '0') {
+        // Hedera Testnet (0 is default/fallback)
+        API_BASE = TESTNET_API_BASE;
+        console.log('API set to Hedera Testnet');
+    } else {
+        // Unknown chain, default to testnet
+        console.warn(`Unknown chain ID: ${chainId}, defaulting to Testnet`);
+        API_BASE = TESTNET_API_BASE;
+    }
+}
 
 /**
  * Get all NFT collections (token IDs) owned by an account
@@ -363,5 +383,6 @@ function hideLoading() {
 window.hederaApi = {
     getNFTCollections,
     getNFTsByTokenId,
-    getOwnedNFTs
+    getOwnedNFTs,
+    setApiBaseFromChainId
 };

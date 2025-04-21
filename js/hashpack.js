@@ -1,24 +1,22 @@
 /**
  * HashPack Wallet Integration for Overlayz
- * Handles all wallet connection and Hedera interactions
+ * Direct implementation for Chrome extension
  */
 
-// HashConnect initialization
-let hashConnect;
-let topic;
-let pairingString;
-let pairingData;
-let accountId = null;
+// Connection state
+let hashConnectInstance = null;
+let connectionData = {
+    topic: "",
+    pairingString: "",
+    accountId: null
+};
 
-// App metadata for HashConnect
+// App metadata
 const appMetadata = {
     name: "Overlayz",
     description: "NFT Overlay Tool for Hedera",
-    icon: "https://www.hashpack.app/img/logo.svg" // TODO: Replace with your own icon
+    icon: "https://www.hashpack.app/img/logo.svg"
 };
-
-// Network to use (testnet or mainnet)
-const network = "mainnet";
 
 // Event callbacks
 const eventCallbacks = {
@@ -27,9 +25,9 @@ const eventCallbacks = {
 };
 
 /**
- * Set callback for wallet connection events
+ * Register event callback
  * @param {string} event - Event name ('connect' or 'disconnect')
- * @param {function} callback - Function to call when event occurs
+ * @param {function} callback - Callback function
  */
 function setWalletEventCallback(event, callback) {
     if (event === 'connect') {
@@ -41,91 +39,107 @@ function setWalletEventCallback(event, callback) {
 
 /**
  * Initialize HashConnect
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>}
  */
 async function initHashConnect() {
     try {
-        // Check if HashConnect is available
-        if (typeof HashConnect === 'undefined') {
-            console.error("HashConnect is not available. Please make sure it's properly loaded.");
-            return;
+        console.log("Initializing HashConnect...");
+
+        // Check if HashConnect library is loaded
+        if (typeof window.hashconnect === 'undefined') {
+            throw new Error("HashConnect library not loaded");
         }
 
-        // Create a new instance
-        hashConnect = new HashConnect();
-        
-        // Set debug to false in production
-        const initData = await hashConnect.init(appMetadata, network, false);
-        
-        // Save private key and topic
-        const privateKey = initData.privKey;
-        topic = initData.topic;
-        
-        // Generate pairing string
-        pairingString = hashConnect.generatePairingString(topic, network, false);
-        
-        // Register for pairing events
-        setupHashConnectEvents();
-        
-        // Check for saved pairing
-        const savedPairing = getSavedPairing();
-        if (savedPairing) {
-            pairingData = savedPairing;
-            accountId = pairingData.accountIds[0];
-            
-            // Trigger connection event
-            if (eventCallbacks.onConnect) {
-                eventCallbacks.onConnect(accountId);
+        // Create HashConnect instance
+        hashConnectInstance = new window.hashconnect.HashConnect();
+        console.log("HashConnect instance created:", hashConnectInstance);
+
+        // Register event handlers
+        setupEvents();
+
+        // Initialize with network and debug enabled
+        const initData = await hashConnectInstance.init(appMetadata, "testnet", true);
+        console.log("HashConnect initialized:", initData);
+
+        // Get state data for pairing
+        connectionData.topic = initData.topic;
+        connectionData.pairingString = hashConnectInstance.generatePairingString(initData, "testnet", false);
+        console.log("Pairing string generated:", connectionData.pairingString);
+
+        // Check for existing session
+        const savedData = localStorage.getItem("hashconnectData");
+        if (savedData) {
+            try {
+                const parsedData = JSON.parse(savedData);
+                console.log("Found saved connection data:", parsedData);
+                
+                if (parsedData.accountId) {
+                    connectionData.accountId = parsedData.accountId;
+                    
+                    // Trigger connection event
+                    if (eventCallbacks.onConnect) {
+                        eventCallbacks.onConnect(connectionData.accountId);
+                    }
+                }
+            } catch (e) {
+                console.error("Error parsing saved data:", e);
             }
         }
-        
-        console.log("HashConnect initialized");
+
+        return true;
     } catch (error) {
-        console.error("Error initializing HashConnect:", error);
+        console.error("Failed to initialize HashConnect:", error);
+        return false;
     }
 }
 
 /**
- * Set up HashConnect event handlers
+ * Setup HashConnect event handlers
  */
-function setupHashConnectEvents() {
-    // Handle wallet found events
-    hashConnect.foundExtensionEvent.on((data) => {
-        console.log("HashPack wallet found", data);
-    });
-    
-    // Handle pairing events (when user approves connection)
-    hashConnect.pairingEvent.on((data) => {
-        console.log("Paired with wallet", data);
+function setupEvents() {
+    // Handle pairing event (when user approves connection)
+    hashConnectInstance.pairingEvent.on((data) => {
+        console.log("Paired with wallet:", data);
         
-        // Save pairing data
-        pairingData = data;
-        accountId = data.accountIds[0];
-        
-        // Save to local storage
-        localStorage.setItem('hashconnectData', JSON.stringify({
-            topic: topic,
-            pairingData: pairingData
-        }));
-        
-        // Trigger connection event
-        if (eventCallbacks.onConnect) {
-            eventCallbacks.onConnect(accountId);
+        if (data.accountIds && data.accountIds.length > 0) {
+            // Save the account ID
+            connectionData.accountId = data.accountIds[0];
+            
+            // Save to local storage
+            localStorage.setItem("hashconnectData", JSON.stringify({
+                topic: connectionData.topic,
+                pairingString: connectionData.pairingString,
+                accountId: connectionData.accountId
+            }));
+            
+            // Trigger connection event
+            if (eventCallbacks.onConnect) {
+                eventCallbacks.onConnect(connectionData.accountId);
+            }
         }
     });
     
     // Handle connection status changes
-    hashConnect.connectionStatusChange.on((status) => {
+    hashConnectInstance.connectionStatusChange.on((status) => {
         console.log("Connection status changed:", status);
         
         if (status === "Disconnected") {
-            clearConnectionData();
+            // Clear connection data
+            connectionData.accountId = null;
+            
+            // Remove from local storage
+            localStorage.removeItem("hashconnectData");
             
             // Trigger disconnect event
             if (eventCallbacks.onDisconnect) {
                 eventCallbacks.onDisconnect();
             }
         }
+    });
+    
+    // When wallet extension is found
+    hashConnectInstance.foundExtensionEvent.on((data) => {
+        console.log("Found wallet extension:", data);
     });
 }
 
@@ -135,29 +149,47 @@ function setupHashConnectEvents() {
  */
 async function connectToWallet() {
     try {
-        if (!hashConnect) {
+        console.log("Connecting to HashPack wallet...");
+        
+        if (!hashConnectInstance) {
             await initHashConnect();
         }
         
-        // First look for extensions
-        hashConnect.findLocalWallets();
+        // Check if already connected
+        if (connectionData.accountId) {
+            console.log("Already connected to wallet:", connectionData.accountId);
+            return;
+        }
         
-        // Connect to the found wallet
-        hashConnect.connectToLocalWallet(pairingString);
+        // First find local wallet extensions
+        console.log("Looking for wallet extensions...");
+        await hashConnectInstance.findLocalWallets();
+        
+        // Connect to the extension with our pairing string
+        console.log("Connecting to local wallet with pairing string");
+        await hashConnectInstance.connectToLocalWallet(connectionData.pairingString);
+        
+        console.log("Connection request sent to wallet");
     } catch (error) {
-        console.error("Error connecting to wallet:", error);
+        console.error("Failed to connect to wallet:", error);
+        throw error;
     }
 }
 
 /**
- * Disconnect from HashPack wallet
+ * Disconnect from wallet
  */
 function disconnectWallet() {
-    if (hashConnect && topic && pairingData) {
+    if (hashConnectInstance && connectionData.topic && connectionData.accountId) {
         try {
-            // Disconnect from paired wallet
-            hashConnect.disconnect(topic, pairingData.accountIds[0]);
-            clearConnectionData();
+            console.log("Disconnecting from wallet:", connectionData.accountId);
+            hashConnectInstance.disconnect(connectionData.topic);
+            
+            // Clear connection data
+            connectionData.accountId = null;
+            
+            // Remove from local storage
+            localStorage.removeItem("hashconnectData");
             
             // Trigger disconnect event
             if (eventCallbacks.onDisconnect) {
@@ -170,48 +202,19 @@ function disconnectWallet() {
 }
 
 /**
- * Clear connection data
- */
-function clearConnectionData() {
-    pairingData = null;
-    accountId = null;
-    localStorage.removeItem('hashconnectData');
-}
-
-/**
- * Get saved pairing data from local storage
- * @returns {object|null} Pairing data or null
- */
-function getSavedPairing() {
-    try {
-        const savedData = localStorage.getItem('hashconnectData');
-        if (savedData) {
-            const parsed = JSON.parse(savedData);
-            if (parsed.pairingData) {
-                return parsed.pairingData;
-            }
-        }
-        return null;
-    } catch (error) {
-        console.error("Error getting saved pairing:", error);
-        return null;
-    }
-}
-
-/**
  * Check if wallet is connected
  * @returns {boolean} True if connected
  */
 function isWalletConnected() {
-    return !!accountId;
+    return connectionData.accountId !== null;
 }
 
 /**
  * Get connected account ID
- * @returns {string|null} Account ID or null if not connected
+ * @returns {string|null} Account ID or null
  */
 function getAccountId() {
-    return accountId;
+    return connectionData.accountId;
 }
 
 // Export wallet functions
