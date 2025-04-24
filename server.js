@@ -11,8 +11,11 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Serve static files
+// Serve static files from the root directory
 app.use(express.static(path.join(__dirname, '/')));
+
+// Serve hedera-wallet-connect from node_modules
+app.use('/lib', express.static(path.join(__dirname, 'node_modules')));
 
 // Default route
 app.get('*', (req, res) => {

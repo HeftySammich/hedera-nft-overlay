@@ -1,209 +1,108 @@
-// Wallet connection state and config
-let dAppConnector = null;
-let connectedAccountId = null;
-let isInitialized = false;
+// wallet.js
 
-// App metadata for wallet connection
-const appMetadata = {
-    name: "Overlayz",
-    description: "NFT Overlay Tool for Hedera",
-    url: window.location.origin,
-    icons: [`${window.location.origin}/assets/icon.png`]
-};
-
-// WalletConnect configuration
-const WALLET_CONNECT_CONFIG = {
-    projectId: "19f08313224ac846097e6a722ab078fc",
-    networkId: "testnet",
-    metadata: appMetadata
-};
-
-// Event handlers for wallet connection
-const walletEvents = {
-    onConnect: null,
-    onDisconnect: null,
-    onAccountChanged: null
-};
-
-/**
- * Initialize the wallet connection system
- */
-async function initWallet() {
-    try {
-        // Wait for SDK to load
-        let attempts = 0;
-        while (typeof window.HederaWalletConnect === 'undefined' && attempts < 5) {
-            console.log("Waiting for Hedera WalletConnect SDK to load...");
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            attempts++;
-        }
-
-        if (typeof window.HederaWalletConnect === 'undefined') {
-            throw new Error("Hedera WalletConnect SDK failed to load");
-        }
-
-        const { DAppConnector, LedgerId, HederaSessionEvent } = window.HederaWalletConnect;
-        
-        // Initialize DAppConnector
-        dAppConnector = new DAppConnector(
-            appMetadata,
-            LedgerId.Testnet,
-            WALLET_CONNECT_CONFIG.projectId,
-            [], // Methods
-            [HederaSessionEvent.ChainChanged, HederaSessionEvent.AccountsChanged],
-            []
-        );
-
-        console.log("DAppConnector initialized successfully");
-        
-        // Set up event listeners
-        setupWalletEvents();
-        
-        isInitialized = true;
-        return true;
-    } catch (error) {
-        console.error("Failed to initialize wallet:", error);
-        isInitialized = false;
-        throw error;
+class Wallet {
+    constructor() {
+        this.dAppConnector = new WalletConnector({
+            metadata: {
+                name: "Overlayz - NFT Overlay Tool for Hedera",
+                description: "Overlayz allows you to customize your Hedera NFTs with unique overlays.",
+                url: window.location.origin,
+                icons: []
+            },
+            network: "testnet" // Use Testnet for MVP
+        });
+        this.accountId = null;
+        this.eventListeners = {};
     }
-}
 
-/**
- * Set up wallet event listeners
- */
-function setupWalletEvents() {
-    if (!dAppConnector) return;
+    onEvent(event, callback) {
+        this.eventListeners[event] = this.eventListeners[event] || [];
+        this.eventListeners[event].push(callback);
+    }
 
-    dAppConnector.on('connect', (data) => {
-        console.log("Wallet connected:", data);
-        if (data.accountIds?.[0]) {
-            connectedAccountId = data.accountIds[0];
-            saveSession(connectedAccountId);
-            if (walletEvents.onConnect) {
-                walletEvents.onConnect(connectedAccountId);
+    emitEvent(event, data) {
+        if (this.eventListeners[event]) {
+            this.eventListeners[event].forEach(callback => callback(data));
+        }
+    }
+
+    async init() {
+        try {
+            console.log('Initializing WalletConnector...');
+            await this.dAppConnector.init();
+            console.log('WalletConnector initialized');
+            
+            // Listen for connection status changes
+            this.dAppConnector.on('session_update', (session) => {
+                console.log('Session updated:', session);
+                if (session.accounts && session.accounts.length > 0) {
+                    this.accountId = session.accounts[0];
+                    this.emitEvent('connect', this.accountId);
+                } else {
+                    this.accountId = null;
+                    this.emitEvent('disconnect');
+                }
+            });
+
+            this.dAppConnector.on('session_delete', () => {
+                console.log('Session deleted');
+                this.accountId = null;
+                this.emitEvent('disconnect');
+            });
+
+            // Check for existing session
+            const currentSession = this.dAppConnector.getActiveSession();
+            if (currentSession && currentSession.accounts && currentSession.accounts.length > 0) {
+                this.accountId = currentSession.accounts[0];
+                this.emitEvent('connect', this.accountId);
             }
+        } catch (error) {
+            console.error('Failed to initialize WalletConnector:', error);
+            throw error;
         }
-    });
+    }
 
-    dAppConnector.on('disconnect', () => {
-        console.log("Wallet disconnected");
-        connectedAccountId = null;
-        clearSession();
-        if (walletEvents.onDisconnect) {
-            walletEvents.onDisconnect();
-        }
-    });
-
-    dAppConnector.on('accountsChanged', (accounts) => {
-        console.log("Accounts changed:", accounts);
-        if (accounts?.[0]) {
-            connectedAccountId = accounts[0];
-            saveSession(connectedAccountId);
-            if (walletEvents.onAccountChanged) {
-                walletEvents.onAccountChanged(connectedAccountId);
-            }
-        }
-    });
-}
-
-/**
- * Connect wallet (manual connection attempt)
- */
-async function connectWallet() {
-    try {
-        if (!isInitialized) {
-            await initWallet();
+    async connect() {
+        if (!this.dAppConnector) {
+            throw new Error('WalletConnector not initialized');
         }
 
-        if (!dAppConnector) {
-            throw new Error("Wallet connector not initialized");
+        try {
+            console.log('Attempting to connect to wallet...');
+            const accounts = await this.dAppConnector.connect();
+            console.log('Connected to wallet:', accounts);
+            this.accountId = accounts[0];
+            this.emitEvent('connect', this.accountId);
+        } catch (error) {
+            console.error('Failed to connect to wallet:', error);
+            throw error;
+        }
+    }
+
+    async disconnect() {
+        if (!this.dAppConnector) {
+            throw new Error('WalletConnector not initialized');
         }
 
-        console.log("Attempting to connect wallet...");
-        await dAppConnector.connectToWallet();
-        
-        return true;
-    } catch (error) {
-        console.error("Error connecting wallet:", error);
-        throw error;
+        try {
+            console.log('Disconnecting wallet...');
+            await this.dAppConnector.disconnect();
+            this.accountId = null;
+            this.emitEvent('disconnect');
+        } catch (error) {
+            console.error('Failed to disconnect wallet:', error);
+            throw error;
+        }
+    }
+
+    isConnected() {
+        return !!this.accountId;
+    }
+
+    getAccountId() {
+        return this.accountId;
     }
 }
 
-/**
- * Disconnect the current wallet
- */
-async function disconnectWallet() {
-    try {
-        if (dAppConnector && isWalletConnected()) {
-            await dAppConnector.disconnect();
-            connectedAccountId = null;
-            clearSession();
-        }
-    } catch (error) {
-        console.error("Error disconnecting wallet:", error);
-        throw error;
-    }
-}
-
-/**
- * Save wallet session to localStorage
- */
-function saveSession(accountId) {
-    try {
-        localStorage.setItem('walletSession', JSON.stringify({
-            accountId: accountId,
-            timestamp: Date.now()
-        }));
-    } catch (e) {
-        console.warn("Could not save wallet session:", e);
-    }
-}
-
-/**
- * Clear wallet session from localStorage
- */
-function clearSession() {
-    try {
-        localStorage.removeItem('walletSession');
-    } catch (e) {
-        console.warn("Could not clear wallet session:", e);
-    }
-}
-
-/**
- * Check if a wallet is connected
- */
-function isWalletConnected() {
-    try {
-        return Boolean(connectedAccountId) && Boolean(dAppConnector);
-    } catch (error) {
-        console.error("Error checking wallet connection:", error);
-        return false;
-    }
-}
-
-/**
- * Get the connected account ID
- */
-function getConnectedAccount() {
-    return connectedAccountId;
-}
-
-/**
- * Register event handlers
- */
-function onWalletEvent(event, callback) {
-    if (event in walletEvents) {
-        walletEvents[event] = callback;
-    }
-}
-
-// Export wallet interface
-window.wallet = {
-    init: initWallet,
-    connect: connectWallet,
-    disconnect: disconnectWallet,
-    isConnected: isWalletConnected,
-    getAccount: getConnectedAccount,
-    onEvent: onWalletEvent
-};
+// Expose wallet instance globally
+window.wallet = new Wallet();
